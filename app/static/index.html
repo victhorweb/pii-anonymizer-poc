@@ -1,0 +1,480 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Anonimizador de Currículos</title>
+<style>
+  :root {
+    --bg: #f6f7f9;
+    --surface: #ffffff;
+    --surface-alt: #f0f2f5;
+    --border: #dfe3e8;
+    --text: #1b1f24;
+    --muted: #5d6673;
+    --accent: #2f5bea;
+    --accent-text: #ffffff;
+    --safe-bg: #e8f6ee;
+    --safe-border: #9fd6b5;
+    --safe-text: #14532d;
+    --warn-bg: #fff6e0;
+    --warn-border: #f1cf7a;
+    --warn-text: #6b4a00;
+    --error-bg: #fdecec;
+    --error-text: #8a1c1c;
+    --c-person: #ffd6d6;
+    --c-phone: #d6ecff;
+    --c-email: #e3dcff;
+    --c-cpf: #ffe5c7;
+    --c-cnpj: #ffeab0;
+    --c-cep: #d4f5e9;
+    --c-address: #dff3c8;
+    --c-dob: #fbd9f1;
+    --c-link: #d2f1f7;
+    --c-other: #e6e6e6;
+    --mark-text: #1b1f24;
+    --radius: 10px;
+    --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #111418;
+      --surface: #1a1e24;
+      --surface-alt: #222831;
+      --border: #313844;
+      --text: #e7eaee;
+      --muted: #9aa4b2;
+      --accent: #6c8cff;
+      --accent-text: #0b0d10;
+      --safe-bg: #12291c;
+      --safe-border: #2f6b47;
+      --safe-text: #b5ecc9;
+      --warn-bg: #2d2511;
+      --warn-border: #6b5520;
+      --warn-text: #f3d98d;
+      --error-bg: #3a1717;
+      --error-text: #ffb4b4;
+      --c-person: #7a3b3b;
+      --c-phone: #2f4f72;
+      --c-email: #4a3f7a;
+      --c-cpf: #7a5428;
+      --c-cnpj: #6e5c1c;
+      --c-cep: #24604c;
+      --c-address: #46632a;
+      --c-dob: #6e2f5e;
+      --c-link: #22606c;
+      --c-other: #444;
+      --mark-text: #f4f6f8;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font: 15px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+  main { max-width: 1280px; margin: 0 auto; padding: 24px 16px 64px; }
+  header { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 16px; }
+  h1 { font-size: 22px; margin: 0; }
+  h2 { font-size: 17px; margin: 0 0 12px; }
+  h3 { font-size: 14px; margin: 0 0 8px; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
+  .status { display: flex; gap: 8px; flex-wrap: wrap; }
+  .pill { font-size: 12px; padding: 4px 10px; border-radius: 999px; background: var(--surface-alt); border: 1px solid var(--border); color: var(--muted); }
+  .pill.ok { color: var(--safe-text); background: var(--safe-bg); border-color: var(--safe-border); }
+  .pill.warn { color: var(--warn-text); background: var(--warn-bg); border-color: var(--warn-border); }
+  .card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px; margin-bottom: 16px; }
+  .local-banner { background: var(--safe-bg); border: 1px solid var(--safe-border); color: var(--safe-text); border-radius: var(--radius); padding: 12px 16px; margin-bottom: 16px; display: flex; gap: 12px; align-items: flex-start; }
+  .local-banner strong { display: block; }
+  .lock { font-size: 22px; line-height: 1; }
+  textarea { width: 100%; min-height: 220px; resize: vertical; font: 13px/1.5 var(--mono); padding: 12px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface-alt); color: var(--text); }
+  .toolbar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 12px; }
+  button, .file-label { font: inherit; font-size: 14px; padding: 8px 14px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface-alt); color: var(--text); cursor: pointer; }
+  button.primary { background: var(--accent); color: var(--accent-text); border-color: var(--accent); font-weight: 600; }
+  button:disabled { opacity: .55; cursor: progress; }
+  .file-label input { display: none; }
+  .spacer { flex: 1; }
+  .hint { font-size: 13px; color: var(--muted); }
+  .error { background: var(--error-bg); color: var(--error-text); border-radius: 8px; padding: 10px 12px; margin-top: 12px; display: none; white-space: pre-wrap; }
+  .grid-2 { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+  .grid-3 { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
+  @media (max-width: 900px) { .grid-2, .grid-3 { grid-template-columns: 1fr; } }
+  .text-view { font: 13px/1.65 var(--mono); white-space: pre-wrap; word-break: break-word; background: var(--surface-alt); border: 1px solid var(--border); border-radius: 8px; padding: 12px; max-height: 560px; overflow: auto; }
+  mark { color: var(--mark-text); border-radius: 4px; padding: 0 2px; }
+  mark[data-type="PERSON"] { background: var(--c-person); }
+  mark[data-type="PHONE_NUMBER"] { background: var(--c-phone); }
+  mark[data-type="EMAIL_ADDRESS"] { background: var(--c-email); }
+  mark[data-type="BR_CPF"] { background: var(--c-cpf); }
+  mark[data-type="BR_CNPJ"] { background: var(--c-cnpj); }
+  mark[data-type="BR_CEP"] { background: var(--c-cep); }
+  mark[data-type="ADDRESS"] { background: var(--c-address); }
+  mark[data-type="DATE_OF_BIRTH"] { background: var(--c-dob); }
+  mark[data-type="SOCIAL_PROFILE_URL"] { background: var(--c-link); }
+  mark[data-type="OTHER"] { background: var(--c-other); }
+  .legend { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 12px; }
+  .legend mark { font-size: 12px; padding: 2px 8px; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th, td { text-align: left; padding: 8px; border-bottom: 1px solid var(--border); vertical-align: top; }
+  th { color: var(--muted); font-weight: 600; }
+  td code { font-family: var(--mono); }
+  .table-wrap { overflow-x: auto; }
+  .score { display: flex; align-items: center; gap: 8px; min-width: 120px; }
+  .score-bar { flex: 1; height: 6px; border-radius: 3px; background: var(--surface-alt); overflow: hidden; }
+  .score-bar span { display: block; height: 100%; background: var(--accent); }
+  .vault { background: var(--safe-bg); border: 1px solid var(--safe-border); border-radius: var(--radius); padding: 16px; margin-bottom: 16px; color: var(--safe-text); }
+  .vault ul { list-style: none; margin: 8px 0 0; padding: 0; display: flex; flex-wrap: wrap; gap: 6px; }
+  .vault li { background: var(--surface); color: var(--text); border: 1px solid var(--safe-border); border-radius: 6px; padding: 4px 8px; font-size: 13px; }
+  .vault li small { color: var(--muted); margin-right: 6px; }
+  .panel-tag { display: inline-block; font-size: 11px; padding: 2px 8px; border-radius: 999px; margin-left: 6px; vertical-align: middle; }
+  .panel-tag.out { background: var(--warn-bg); color: var(--warn-text); border: 1px solid var(--warn-border); }
+  .panel-tag.in { background: var(--safe-bg); color: var(--safe-text); border: 1px solid var(--safe-border); }
+  .hidden { display: none; }
+  .resume-summary dl { display: grid; grid-template-columns: max-content 1fr; gap: 4px 12px; margin: 0 0 12px; font-size: 14px; }
+  .resume-summary dt { color: var(--muted); }
+  .resume-summary dd { margin: 0; }
+  details summary { cursor: pointer; color: var(--muted); font-size: 13px; margin-top: 8px; }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>Anonimizador de currículos <span class="hint">PoC · Presidio + GLiNER (CPU)</span></h1>
+    <div class="status">
+      <span class="pill" id="ner-status">Verificando modelo…</span>
+      <span class="pill" id="llm-status">LLM: …</span>
+    </div>
+  </header>
+
+  <div class="local-banner">
+    <span class="lock" aria-hidden="true">🔒</span>
+    <div>
+      <strong>Detecção e mascaramento rodam 100% nesta máquina.</strong>
+      O currículo original e o mapa de substituição nunca são enviados para fora. Só o texto mascarado (com placeholders como &lt;NOME_1&gt;) vai para a LLM, e a reidratação acontece aqui, depois da resposta.
+    </div>
+  </div>
+
+  <section class="card">
+    <h2>Currículo</h2>
+    <textarea id="resume-input" placeholder="Cole aqui o texto do currículo, envie um .txt/.pdf ou carregue o exemplo."></textarea>
+    <div class="toolbar">
+      <button type="button" id="load-sample">Carregar exemplo</button>
+      <label class="file-label">Enviar .txt ou .pdf<input type="file" id="file-input" accept=".txt,.pdf,text/plain,application/pdf"></label>
+      <span class="hint" id="file-name"></span>
+      <span class="spacer"></span>
+      <button type="button" class="primary" id="mask-button">Mascarar</button>
+      <button type="button" class="primary" id="llm-button">Enviar para LLM</button>
+    </div>
+    <div class="error" id="error-box"></div>
+  </section>
+
+  <section id="mask-section" class="hidden">
+    <div class="vault">
+      <h2>🔒 Dados que NUNCA saíram da máquina <span class="hint" id="vault-count"></span></h2>
+      <div>Estes valores ficaram só no mapa local. A LLM recebe apenas os placeholders.</div>
+      <ul id="vault-list"></ul>
+    </div>
+
+    <div class="card">
+      <div class="legend" id="legend"></div>
+      <div class="grid-2">
+        <div>
+          <h3>Original (detecções destacadas) <span class="panel-tag in">fica local</span></h3>
+          <div class="text-view" id="original-view"></div>
+        </div>
+        <div>
+          <h3>Mascarado <span class="panel-tag out">é isto que pode sair</span></h3>
+          <div class="text-view" id="masked-view"></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Entidades detectadas</h2>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Entidade</th><th>Tipo</th><th>Placeholder</th><th>Confiança</th><th>Detector</th><th>Posição</th></tr></thead>
+          <tbody id="entity-rows"></tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <section id="llm-section" class="hidden">
+    <div class="card">
+      <h2>Ida e volta com a LLM <span class="hint" id="llm-model"></span></h2>
+      <div class="grid-3">
+        <div>
+          <h3>1 · Enviado para a LLM <span class="panel-tag out">saiu</span></h3>
+          <div class="text-view" id="sent-view"></div>
+        </div>
+        <div>
+          <h3>2 · Resposta da LLM <span class="panel-tag out">com placeholders</span></h3>
+          <div class="text-view" id="response-view"></div>
+        </div>
+        <div>
+          <h3>3 · Final reidratado <span class="panel-tag in">só local</span></h3>
+          <div class="resume-summary" id="summary-view"></div>
+          <details>
+            <summary>Ver JSON reidratado</summary>
+            <div class="text-view" id="rehydrated-view"></div>
+          </details>
+        </div>
+      </div>
+    </div>
+  </section>
+</main>
+
+<script>
+const TYPE_LABELS = {
+  PERSON: "Nome",
+  PHONE_NUMBER: "Telefone",
+  EMAIL_ADDRESS: "E-mail",
+  BR_CPF: "CPF",
+  BR_CNPJ: "CNPJ",
+  BR_CEP: "CEP",
+  ADDRESS: "Endereço",
+  DATE_OF_BIRTH: "Data de nascimento",
+  SOCIAL_PROFILE_URL: "Rede social / link",
+};
+const PLACEHOLDER_TYPES = {
+  NOME: "PERSON",
+  TELEFONE: "PHONE_NUMBER",
+  EMAIL: "EMAIL_ADDRESS",
+  CPF: "BR_CPF",
+  CNPJ: "BR_CNPJ",
+  CEP: "BR_CEP",
+  ENDERECO: "ADDRESS",
+  DATA_NASCIMENTO: "DATE_OF_BIRTH",
+  LINK: "SOCIAL_PROFILE_URL",
+};
+const PLACEHOLDER_REGEX = /&lt;([A-Z_]+?)_(\d+)&gt;/g;
+
+const elements = Object.fromEntries(
+  [
+    "resume-input", "load-sample", "file-input", "file-name", "mask-button", "llm-button", "error-box",
+    "mask-section", "vault-list", "vault-count", "legend", "original-view", "masked-view", "entity-rows",
+    "llm-section", "llm-model", "sent-view", "response-view", "summary-view", "rehydrated-view",
+    "ner-status", "llm-status",
+  ].map((id) => [id, document.getElementById(id)])
+);
+
+function escapeHtml(value) {
+  return String(value ?? "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;");
+}
+
+function typeLabel(entityType) {
+  return TYPE_LABELS[entityType] || entityType;
+}
+
+function knownType(entityType) {
+  return TYPE_LABELS[entityType] ? entityType : "OTHER";
+}
+
+function highlightPlaceholders(escapedText) {
+  return escapedText.replace(PLACEHOLDER_REGEX, (match, label) => {
+    const entityType = knownType(PLACEHOLDER_TYPES[label]);
+    return `<mark data-type="${entityType}">${match}</mark>`;
+  });
+}
+
+function highlightOriginal(text, entities) {
+  const sorted = [...entities].sort((left, right) => left.start - right.start);
+  let html = "";
+  let cursor = 0;
+  for (const entity of sorted) {
+    html += escapeHtml(text.slice(cursor, entity.start));
+    const title = `${typeLabel(entity.entity_type)} → ${entity.placeholder} (score ${entity.score})`;
+    html += `<mark data-type="${knownType(entity.entity_type)}" title="${escapeHtml(title)}">${escapeHtml(text.slice(entity.start, entity.end))}</mark>`;
+    cursor = entity.end;
+  }
+  return html + escapeHtml(text.slice(cursor));
+}
+
+function setBusy(isBusy) {
+  elements["mask-button"].disabled = isBusy;
+  elements["llm-button"].disabled = isBusy;
+}
+
+function showError(message) {
+  elements["error-box"].textContent = message;
+  elements["error-box"].style.display = message ? "block" : "none";
+}
+
+async function requestJson(url, options) {
+  const response = await fetch(url, options);
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    const detail = typeof payload.detail === "string" ? payload.detail : JSON.stringify(payload.detail || payload);
+    throw new Error(`Erro ${response.status}: ${detail}`);
+  }
+  return payload;
+}
+
+function postJson(url, body) {
+  return requestJson(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+}
+
+function currentText() {
+  const text = elements["resume-input"].value;
+  if (!text.trim()) {
+    throw new Error("Cole um currículo, envie um arquivo ou carregue o exemplo primeiro.");
+  }
+  return text;
+}
+
+function renderLegend(entities) {
+  const types = [...new Set(entities.map((entity) => entity.entity_type))];
+  elements.legend.innerHTML = types
+    .map((entityType) => `<mark data-type="${knownType(entityType)}">${escapeHtml(typeLabel(entityType))}</mark>`)
+    .join("");
+}
+
+function renderVault(mapping, entities) {
+  const typeByPlaceholder = Object.fromEntries(entities.map((entity) => [entity.placeholder, entity.entity_type]));
+  const surfacesByPlaceholder = {};
+  for (const entity of entities) {
+    surfacesByPlaceholder[entity.placeholder] ??= new Set();
+    surfacesByPlaceholder[entity.placeholder].add(entity.text);
+  }
+  const items = Object.keys(mapping).map((placeholder) => {
+    const surfaces = [...surfacesByPlaceholder[placeholder]].map(escapeHtml).join(" · ");
+    const label = escapeHtml(typeLabel(typeByPlaceholder[placeholder]));
+    return `<li><small>${label}</small>${surfaces} <small>→ ${escapeHtml(placeholder)}</small></li>`;
+  });
+  elements["vault-list"].innerHTML = items.join("");
+  elements["vault-count"].textContent = `(${items.length} valores, ${entities.length} ocorrências)`;
+}
+
+function renderEntityTable(entities) {
+  elements["entity-rows"].innerHTML = entities
+    .map((entity) => {
+      const percent = Math.round(entity.score * 100);
+      return `<tr>
+        <td><mark data-type="${knownType(entity.entity_type)}">${escapeHtml(entity.text)}</mark></td>
+        <td>${escapeHtml(typeLabel(entity.entity_type))}</td>
+        <td><code>${escapeHtml(entity.placeholder)}</code></td>
+        <td><div class="score"><div class="score-bar"><span style="width:${percent}%"></span></div>${entity.score.toFixed(2)}</div></td>
+        <td class="hint">${escapeHtml(entity.sources.join(", "))}</td>
+        <td class="hint">${entity.start}–${entity.end}</td>
+      </tr>`;
+    })
+    .join("");
+}
+
+function renderMasking(originalText, result) {
+  elements["original-view"].innerHTML = highlightOriginal(originalText, result.entities);
+  elements["masked-view"].innerHTML = highlightPlaceholders(escapeHtml(result.masked_text));
+  renderLegend(result.entities);
+  renderVault(result.mapping, result.entities);
+  renderEntityTable(result.entities);
+  elements["mask-section"].classList.remove("hidden");
+}
+
+function prettyJson(rawText) {
+  try {
+    return JSON.stringify(JSON.parse(rawText), null, 2);
+  } catch {
+    return rawText;
+  }
+}
+
+function renderSummary(resume) {
+  if (resume.simulated) {
+    elements["summary-view"].innerHTML = `<p class="hint">${escapeHtml(resume.notice)}</p>
+      <dl><dt>Nome</dt><dd>${escapeHtml(resume.name || "—")}</dd></dl>
+      <h3>Eco reidratado</h3><div class="text-view">${escapeHtml(resume.echo)}</div>`;
+    return;
+  }
+  const experiences = (resume.experiences || [])
+    .map((experience) => `<li><strong>${escapeHtml(experience.role)}</strong> — ${escapeHtml(experience.company)} <span class="hint">(${escapeHtml(experience.start)} – ${escapeHtml(experience.end)})</span></li>`)
+    .join("");
+  elements["summary-view"].innerHTML = `<dl>
+      <dt>Nome</dt><dd>${escapeHtml(resume.name)}</dd>
+      <dt>Título</dt><dd>${escapeHtml(resume.headline)}</dd>
+      <dt>Senioridade</dt><dd><strong>${escapeHtml(resume.seniority_score ?? "—")}</strong>/100</dd>
+      <dt>Skills</dt><dd>${escapeHtml((resume.skills || []).join(", "))}</dd>
+    </dl>
+    <h3>Experiências</h3><ul>${experiences}</ul>
+    <p class="hint">${escapeHtml(resume.seniority_rationale)}</p>`;
+}
+
+function renderLlmRoundTrip(result) {
+  elements["sent-view"].innerHTML = highlightPlaceholders(escapeHtml(result.sent_to_llm));
+  elements["response-view"].innerHTML = highlightPlaceholders(escapeHtml(prettyJson(result.llm_response)));
+  elements["rehydrated-view"].textContent = JSON.stringify(result.rehydrated, null, 2);
+  elements["llm-model"].textContent = result.simulated ? "· modo simulado (sem ANTHROPIC_API_KEY)" : `· ${result.model}`;
+  renderSummary(result.rehydrated);
+  elements["llm-section"].classList.remove("hidden");
+}
+
+async function runAction(action) {
+  showError("");
+  setBusy(true);
+  try {
+    await action();
+  } catch (error) {
+    showError(error.message);
+  } finally {
+    setBusy(false);
+  }
+}
+
+elements["mask-button"].addEventListener("click", () =>
+  runAction(async () => {
+    const text = currentText();
+    renderMasking(text, await postJson("/anonymize", { text }));
+  })
+);
+
+elements["llm-button"].addEventListener("click", () =>
+  runAction(async () => {
+    const text = currentText();
+    const result = await postJson("/process", { text });
+    renderMasking(text, { masked_text: result.sent_to_llm, mapping: result.mapping, entities: result.entities });
+    renderLlmRoundTrip(result);
+  })
+);
+
+elements["load-sample"].addEventListener("click", () =>
+  runAction(async () => {
+    const { text } = await requestJson("/sample");
+    elements["resume-input"].value = text;
+    elements["file-name"].textContent = "samples/curriculo_exemplo.txt";
+  })
+);
+
+elements["file-input"].addEventListener("change", (event) =>
+  runAction(async () => {
+    const [file] = event.target.files;
+    if (!file) return;
+    const form = new FormData();
+    form.append("file", file);
+    const { text } = await requestJson("/extract-text", { method: "POST", body: form });
+    elements["resume-input"].value = text;
+    elements["file-name"].textContent = file.name;
+    event.target.value = "";
+  })
+);
+
+requestJson("/health")
+  .then((health) => {
+    elements["ner-status"].textContent = "GLiNER pronto (CPU)";
+    elements["ner-status"].classList.add("ok");
+    const simulated = health.llm_mode === "simulated";
+    elements["llm-status"].textContent = simulated ? "LLM: simulada (sem ANTHROPIC_API_KEY)" : `LLM: ${health.llm_model}`;
+    elements["llm-status"].classList.add(simulated ? "warn" : "ok");
+  })
+  .catch(() => {
+    elements["ner-status"].textContent = "Servidor indisponível";
+  });
+</script>
+</body>
+</html>

@@ -1,0 +1,46 @@
+MARIA EDUARDA DOS SANTOS OLIVEIRA
+Desenvolvedora Backend Sênior | Python • Go • AWS
+
+Contato: (11) 98765-4321 | Fixo/recado: +55 21 3456-7890
+E-mail: maria.eduarda.oliveira@emailfalso.com.br
+LinkedIn: https://www.linkedin.com/in/maria-eduarda-oliveira-dev
+GitHub: github.com/mariaeduardaoliveira
+Endereço: Rua das Laranjeiras, 452, apto 31 - Vila Mariana, São Paulo/SP - CEP 04117-091
+Data de nascimento: 14/03/1991
+CPF: 529.982.247-25 | Nacionalidade: brasileira
+
+RESUMO PROFISSIONAL
+Engenheira de software com 10 anos de experiência construindo APIs de alta disponibilidade,
+pipelines de dados e plataformas de pagamento. Maria Eduarda dos Santos Oliveira já liderou
+squads de até 8 pessoas e conduziu migrações de monólitos para microsserviços na AWS.
+
+EXPERIÊNCIA
+PagaFácil Instituição de Pagamento S.A. — Tech Lead Backend (03/2021 – atual)
+- Liderança técnica de 2 squads (11 pessoas) no domínio de conciliação financeira.
+- Redesenho do motor de liquidação em Go: p99 caiu de 1,8 s para 240 ms.
+- Implantação de observabilidade com OpenTelemetry, Grafana e alertas por SLO.
+
+Logística Ágil Transportes Ltda. — Desenvolvedora Backend Pleno (01/2018 – 02/2021)
+- APIs REST em Python/FastAPI e Django para rastreamento de 40 mil entregas/dia.
+- Mensageria com RabbitMQ e Kafka; cache distribuído com Redis.
+- Mentoria de 4 desenvolvedores juniores.
+
+Consultoria autônoma (MEI — CNPJ 11.222.333/0001-81) — Desenvolvedora (2015 – 2017)
+- Sites e integrações de e-commerce para pequenos varejistas da região de Campinas.
+
+FORMAÇÃO
+Bacharelado em Ciência da Computação — Universidade Estadual de Campinas (2010 – 2014)
+Especialização em Arquitetura de Software Distribuído — PUC Minas (2019 – 2020)
+
+HABILIDADES
+Python, Go, FastAPI, Django, PostgreSQL, Redis, Kafka, RabbitMQ, Docker, Kubernetes,
+Terraform, AWS (ECS, Lambda, SQS, RDS), OpenTelemetry, testes automatizados, DDD.
+
+IDIOMAS
+Inglês avançado (C1) · Espanhol intermediário
+
+REFERÊNCIAS
+Disponíveis mediante solicitação. Contato alternativo: 21 99876 5432 (WhatsApp).
+
+Declaro que as informações acima são verdadeiras.
+Maria Eduarda dos Santos Oliveira — CPF 52998224725

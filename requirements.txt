@@ -1,0 +1,11 @@
+--extra-index-url https://download.pytorch.org/whl/cpu
+torch
+presidio-analyzer[gliner]
+presidio-anonymizer
+fastapi
+uvicorn
+python-multipart
+pypdf
+anthropic
+pytest
+httpx
