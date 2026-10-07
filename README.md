@@ -7,6 +7,7 @@ Mascara dados pessoais de currículos brasileiros **antes** de qualquer chamada 
   - Regex para telefone BR (fixo/celular, com/sem DDD, com/sem +55, com/sem formatação), e-mail, CEP, data de nascimento, logradouro e URLs de LinkedIn/GitHub (e outras redes).
   - `GLiNERRecognizer` com `urchade/gliner_multi_pii-v1` (`map_location="cpu"`, threshold **0.3**) para nome, endereço, telefone, e-mail e data de nascimento.
 - **Placeholders estáveis**: `<NOME_1>`, `<TELEFONE_2>`, `<CPF_1>`… O mesmo valor no mesmo documento sempre vira o mesmo placeholder, inclusive em grafias diferentes (`MARIA SILVA` / `Maria Silva`, `529.982.247-25` / `52998224725`, `(11) 98765-4321` / `+55 11 98765-4321`).
+- **Cidade e estado ficam visíveis**: de qualquer endereço detectado (regex ou GLiNER) sai o sufixo `Cidade/UF`, `Cidade - UF` ou `Cidade, UF`; o resto do endereço (logradouro, número, complemento, bairro) e o CEP continuam mascarados. Um "endereço" que é só cidade ou estado, sem número e sem tipo de logradouro, não é mascarado.
 - **Recall primeiro**: toda ocorrência de um valor detectado é propagada pelo texto (se o GLiNER achou o nome uma vez, as outras ocorrências também são mascaradas), e spans sobrepostos são **unidos** num só placeholder: nada fica aninhado e nada detectado vaza.
 
 ## Rodar
@@ -59,4 +60,5 @@ Cobrem: DV de CPF/CNPJ, CPF válido detectado, CPF inválido ignorado, 10 format
 
 - O GLiNER é probabilístico: nomes muito incomuns ou fora de contexto podem escapar. O threshold baixo (0.3) troca precisão por recall, então espere alguns falsos positivos (ex.: nome de empresa marcado como pessoa).
 - A data de nascimento por regex mascara qualquer data completa (`dd/mm/aaaa`); datas no formato `mm/aaaa`, comuns em experiências, não são tocadas.
+- Cidade sem UF no fim de um endereço (`Rua X, 100, Campinas`) continua dentro do placeholder, porque não dá para separá-la do bairro com segurança.
 - O mapa de substituição fica só na resposta da API local; numa versão real ele precisa ser guardado com criptografia e ter prazo de retenção.

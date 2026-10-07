@@ -80,11 +80,12 @@ def test_numbers_followed_by_sentence_punctuation_are_masked(anonymizer):
         assert secret not in result.masked_text, secret
 
 
-def test_full_address_with_complement_and_city_is_masked(anonymizer):
+def test_full_address_with_complement_is_masked_but_city_and_state_are_kept(anonymizer):
     result = anonymizer.anonymize(SAMPLE_RESUME.read_text(encoding="utf-8"))
 
-    for secret in ["apto 31", "Vila Mariana", "São Paulo/SP"]:
+    for secret in ["Rua das Laranjeiras", "apto 31", "Vila Mariana"]:
         assert secret not in result.masked_text, secret
+    assert "São Paulo/SP" in result.masked_text
 
 
 def test_employment_periods_are_not_mistaken_for_birth_dates(anonymizer):
@@ -142,6 +143,29 @@ def test_occurrences_missed_by_the_model_inherit_the_placeholder():
     assert result.masked_text == "<NOME_1>, engenheira.\n<NOME_1>\nContato de <NOME_1> via RH."
     assert result.mapping == {"<NOME_1>": "Ana Beatriz Costa"}
     assert rehydrate(result.masked_text, result.mapping, result.variants) == text
+
+
+@pytest.mark.parametrize("city_and_state", ["Campinas/SP", "Campinas - SP", "Campinas, SP", "Belo Horizonte/MG"])
+def test_detected_address_keeps_city_and_state_visible(city_and_state):
+    street = "Rua das Flores, 100 - Centro"
+    text = f"Endereço: {street}, {city_and_state}. Disponível para viagens."
+    anonymizer = ResumeAnonymizer({"stub": FirstOccurrenceOnlyAnalyzer(f"{street}, {city_and_state}", "ADDRESS")})
+
+    result = anonymizer.anonymize(text)
+
+    assert result.masked_text == f"Endereço: <ENDERECO_1>, {city_and_state}. Disponível para viagens."
+    assert rehydrate(result.masked_text, result.mapping, result.variants) == text
+
+
+@pytest.mark.parametrize("locality", ["Campinas/SP", "São Paulo - SP", "Campinas"])
+def test_address_made_only_of_city_or_state_is_not_masked(locality):
+    text = f"Universidade Estadual de {locality} (2010 – 2014)"
+    anonymizer = ResumeAnonymizer({"stub": FirstOccurrenceOnlyAnalyzer(locality, "ADDRESS")})
+
+    result = anonymizer.anonymize(text)
+
+    assert result.masked_text == text
+    assert result.entities == []
 
 
 class CountingAnalyzer(FirstOccurrenceOnlyAnalyzer):

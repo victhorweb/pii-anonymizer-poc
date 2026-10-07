@@ -14,6 +14,7 @@ from app.recognizers import (
     GLINER_THRESHOLD,
     LANGUAGE,
     PortugueseGlinerRecognizer,
+    address_without_city_and_state,
     build_pattern_recognizers,
     configure_torch_threads,
 )
@@ -156,6 +157,8 @@ class ResumeAnonymizer:
         spans = []
         for result in results:
             start, end = _trim_span(text, result.start, result.end)
+            if result.entity_type == "ADDRESS":
+                start, end = _trim_span(text, start, start + len(address_without_city_and_state(text[start:end])))
             if end <= start:
                 continue
             source = result.recognition_metadata.get("recognizer_name", "unknown")

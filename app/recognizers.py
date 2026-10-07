@@ -29,9 +29,13 @@ NUMBER_START = r"(?<!\d)(?<!\d[.\-/])"
 NUMBER_END = r"(?!\d)(?![.\-/]\d)"
 ADDRESS_COMPLEMENT = r"(?:\s*[,-]?\s*(?:apto?\.?|apartamento|casa|bloco|bl\.?|sala|conj\.?|cj\.?|lote|qd\.?|quadra|andar)\s*[\w-]+)*"
 NEIGHBORHOOD = r"(?:\s+[-–]\s+[^\n,;|]{2,40}?(?=\s*,))?"
-CITY_AND_STATE = r"(?:\s*,\s*[^\n,;|/]{2,40}/[a-z]{2}\b)?"
 EMPLOYMENT_PERIOD = re.compile(r"^\d{1,2}/\d{4}\s*[–—-]\s*(?:\d{1,2}/\d{4}|atual|presente|hoje)$", re.IGNORECASE)
 STREET_TYPES = r"Rua|R\.|Avenida|Av\.?|Alameda|Al\.|Travessa|Tv\.|Praça|Pça\.?|Estrada|Estr\.|Rodovia|Rod\.|Largo|Viela|Servidão"
+BRAZILIAN_STATES = "AC|AL|AP|AM|BA|CE|DF|ES|GO|MA|MT|MS|MG|PA|PB|PR|PE|PI|RJ|RN|RS|RO|RR|SC|SP|SE|TO"
+CITY_AND_STATE_SUFFIX = re.compile(
+    rf"(?:^|[\s,–-]+)[^\W\d][^\n,;|/\d]{{0,40}}?\s*(?:/|\s[-–]\s|,)\s*(?:{BRAZILIAN_STATES})\.?\s*$"
+)
+STREET_ADDRESS_HINT = re.compile(rf"\d|\b(?:{STREET_TYPES})", re.IGNORECASE)
 
 
 class CpfRecognizer(PatternRecognizer):
@@ -149,7 +153,7 @@ class StreetAddressRecognizer(PatternRecognizer):
             patterns=[
                 Pattern(
                     "street_with_number",
-                    rf"\b(?:{STREET_TYPES})\s+[^\n,;|]{{2,60}}?,?\s*(?:n[º°o]\.?\s*)?\d{{1,5}}[A-Za-z]?\b{ADDRESS_COMPLEMENT}{NEIGHBORHOOD}{CITY_AND_STATE}",
+                    rf"\b(?:{STREET_TYPES})\s+[^\n,;|]{{2,60}}?,?\s*(?:n[º°o]\.?\s*)?\d{{1,5}}[A-Za-z]?\b{ADDRESS_COMPLEMENT}{NEIGHBORHOOD}",
                     0.6,
                 ),
             ],
@@ -210,6 +214,12 @@ class PortugueseGlinerRecognizer(GLiNERRecognizer):
 
 def _is_employment_period(text: str, result: RecognizerResult) -> bool:
     return result.entity_type == "DATE_OF_BIRTH" and bool(EMPLOYMENT_PERIOD.match(text[result.start:result.end].strip()))
+
+
+def address_without_city_and_state(surface: str) -> str:
+    suffix = CITY_AND_STATE_SUFFIX.search(surface)
+    street = surface[:suffix.start()] if suffix else surface
+    return street if STREET_ADDRESS_HINT.search(street) else ""
 
 
 def configure_torch_threads() -> None:
