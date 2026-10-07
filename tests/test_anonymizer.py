@@ -6,6 +6,7 @@ from presidio_analyzer import RecognizerResult
 
 from app.anonymizer import ResumeAnonymizer, rehydrate
 from app.document_validators import is_valid_cnpj, is_valid_cpf
+from app.recognizers import EMPLOYMENT_PERIOD
 
 SAMPLE_RESUME = Path(__file__).resolve().parent.parent / "samples" / "curriculo_exemplo.txt"
 VALID_CPF = "529.982.247-25"
@@ -134,13 +135,75 @@ class FirstOccurrenceOnlyAnalyzer:
 
 def test_occurrences_missed_by_the_model_inherit_the_placeholder():
     text = "Ana Beatriz Costa, engenheira.\nANA BEATRIZ COSTA\nContato de ana beatriz  costa via RH."
-    anonymizer = ResumeAnonymizer(FirstOccurrenceOnlyAnalyzer("Ana Beatriz Costa", "PERSON"))
+    anonymizer = ResumeAnonymizer({"stub": FirstOccurrenceOnlyAnalyzer("Ana Beatriz Costa", "PERSON")})
 
     result = anonymizer.anonymize(text)
 
     assert result.masked_text == "<NOME_1>, engenheira.\n<NOME_1>\nContato de <NOME_1> via RH."
     assert result.mapping == {"<NOME_1>": "Ana Beatriz Costa"}
     assert rehydrate(result.masked_text, result.mapping, result.variants) == text
+
+
+class CountingAnalyzer(FirstOccurrenceOnlyAnalyzer):
+    def __init__(self, surface, entity_type):
+        super().__init__(surface, entity_type)
+        self.calls = 0
+
+    def analyze(self, text, **kwargs):
+        self.calls += 1
+        return super().analyze(text, **kwargs)
+
+
+def test_repeated_text_is_served_from_cache_without_new_detection():
+    analyzer = CountingAnalyzer("Ana Beatriz Costa", "PERSON")
+    anonymizer = ResumeAnonymizer({"stub": analyzer})
+    text = "Ana Beatriz Costa, engenheira."
+
+    first = anonymizer.anonymize(text)
+    second = anonymizer.anonymize(text)
+
+    assert analyzer.calls == 1
+    assert first.timings["cache_hit"] is False
+    assert second.timings["cache_hit"] is True
+    assert second.masked_text == first.masked_text
+    assert second.mapping == first.mapping
+
+
+def test_cache_evicts_least_recently_used_text():
+    analyzer = CountingAnalyzer("Ana", "PERSON")
+    anonymizer = ResumeAnonymizer({"stub": analyzer}, cache_size=2)
+
+    for text in ["Ana A", "Ana B", "Ana A", "Ana C", "Ana A", "Ana B"]:
+        anonymizer.anonymize(text)
+
+    assert analyzer.calls == 4
+
+
+def test_batched_gliner_inference_matches_presidio_sequential_chunking(anonymizer):
+    gliner_recognizer = anonymizer.analyzers["gliner"].registry.recognizers[0]
+    text = SAMPLE_RESUME.read_text(encoding="utf-8")
+    entities = gliner_recognizer.supported_entities
+
+    batched = gliner_recognizer.analyze(text, entities)
+    sequential = [
+        result
+        for result in super(type(gliner_recognizer), gliner_recognizer).analyze(text, entities)
+        if not (result.entity_type == "DATE_OF_BIRTH" and EMPLOYMENT_PERIOD.match(text[result.start:result.end].strip()))
+    ]
+
+    def spans(results):
+        return sorted((result.start, result.end, result.entity_type) for result in results)
+
+    assert spans(batched) == spans(sequential)
+    assert len(batched) >= 8
+
+
+def test_detection_reports_time_per_stage(anonymizer):
+    result = anonymizer.anonymize("Texto inédito para medir: Carla Nunes, CPF 529.982.247-25.")
+
+    assert result.timings["cache_hit"] is False
+    assert {"regex", "gliner", "total"} <= set(result.timings)
+    assert result.timings["regex"] < result.timings["gliner"]
 
 
 def test_same_value_in_different_formats_shares_placeholder(anonymizer):
@@ -234,3 +297,4 @@ def test_process_without_api_key_echoes_masked_text_and_rehydrates(client):
     assert "529.982.247-25" not in processed["llm_response"]
     assert "<NOME_1>" in processed["llm_response"]
     assert processed["rehydrated"]["name"] == "Maria Eduarda dos Santos Oliveira"
+    assert {"llm", "total", "cache_hit"} <= set(processed["timings"])

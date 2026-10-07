@@ -1,6 +1,9 @@
+import hashlib
 import re
-from collections import Counter, defaultdict
-from dataclasses import dataclass, field
+import threading
+import time
+from collections import Counter, OrderedDict, defaultdict
+from dataclasses import dataclass, field, replace
 from typing import Any, Dict, Iterable, List, Optional
 
 from presidio_analyzer import AnalyzerEngine, RecognizerRegistry
@@ -12,6 +15,7 @@ from app.recognizers import (
     LANGUAGE,
     PortugueseGlinerRecognizer,
     build_pattern_recognizers,
+    configure_torch_threads,
 )
 
 PLACEHOLDER_LABELS = {
@@ -30,6 +34,7 @@ PLACEHOLDER_PATTERN = re.compile(r"<\s*([A-Z_]+_\d+)\s*>")
 SPAN_EDGE_NOISE = " \t\r\n,;:|•·–—"
 MIN_PROPAGATION_LENGTH = 3
 BRAZIL_COUNTRY_CODE = "55"
+DEFAULT_CACHE_SIZE = 128
 
 
 @dataclass(frozen=True)
@@ -54,12 +59,21 @@ class AnonymizationResult:
     mapping: Dict[str, str]
     variants: Dict[str, List[str]]
     entities: List[Dict[str, Any]] = field(default_factory=list)
+    timings: Dict[str, Any] = field(default_factory=dict)
 
 
-def build_analyzer_engine() -> AnalyzerEngine:
+def build_detection_engines() -> Dict[str, AnalyzerEngine]:
+    configure_torch_threads()
+    return {
+        "regex": _build_analyzer_engine(build_pattern_recognizers()),
+        "gliner": _build_analyzer_engine([PortugueseGlinerRecognizer()]),
+    }
+
+
+def _build_analyzer_engine(recognizers: list) -> AnalyzerEngine:
     nlp_engine = NoOpNlpEngine(models=[{"lang_code": LANGUAGE, "model_name": "no_op"}])
     registry = RecognizerRegistry(supported_languages=[LANGUAGE])
-    for recognizer in [*build_pattern_recognizers(), PortugueseGlinerRecognizer()]:
+    for recognizer in recognizers:
         registry.add_recognizer(recognizer)
     return AnalyzerEngine(
         registry=registry,
@@ -90,17 +104,55 @@ def _normalize_digits(entity_type: str, surface: str) -> str:
 
 
 class ResumeAnonymizer:
-    def __init__(self, analyzer: AnalyzerEngine):
-        self.analyzer = analyzer
+    def __init__(self, analyzers: Dict[str, Any], cache_size: int = DEFAULT_CACHE_SIZE):
+        self.analyzers = analyzers
+        self.cache_size = cache_size
+        self._cache: "OrderedDict[str, AnonymizationResult]" = OrderedDict()
+        self._cache_lock = threading.Lock()
 
     def anonymize(self, text: str) -> AnonymizationResult:
-        detected = self._detect(text)
+        started_at = time.perf_counter()
+        key = hashlib.sha256(text.encode("utf-8")).hexdigest()
+        cached = self._cached_result(key)
+        if cached is not None:
+            return replace(cached, timings={"cache_hit": True, "total": time.perf_counter() - started_at})
+        result = self._anonymize_uncached(text)
+        self._store_result(key, result)
+        return result
+
+    def warm_up(self, text: str) -> None:
+        self._anonymize_uncached(text)
+
+    def _anonymize_uncached(self, text: str) -> AnonymizationResult:
+        started_at = time.perf_counter()
+        timings: Dict[str, Any] = {"cache_hit": False}
+        detected = []
+        for stage, analyzer in self.analyzers.items():
+            stage_started_at = time.perf_counter()
+            detected += self._detect(analyzer, text)
+            timings[stage] = time.perf_counter() - stage_started_at
         propagated = self._propagate_occurrences(text, detected)
         merged = self._merge_overlapping(detected + propagated)
-        return self._replace_with_placeholders(text, merged)
+        result = self._replace_with_placeholders(text, merged)
+        timings["total"] = time.perf_counter() - started_at
+        return replace(result, timings=timings)
 
-    def _detect(self, text: str) -> List[DetectedSpan]:
-        results = self.analyzer.analyze(text=text, language=LANGUAGE, score_threshold=GLINER_THRESHOLD)
+    def _cached_result(self, key: str) -> Optional[AnonymizationResult]:
+        with self._cache_lock:
+            cached = self._cache.get(key)
+            if cached is not None:
+                self._cache.move_to_end(key)
+            return cached
+
+    def _store_result(self, key: str, result: AnonymizationResult) -> None:
+        with self._cache_lock:
+            self._cache[key] = result
+            self._cache.move_to_end(key)
+            while len(self._cache) > self.cache_size:
+                self._cache.popitem(last=False)
+
+    def _detect(self, analyzer: Any, text: str) -> List[DetectedSpan]:
+        results = analyzer.analyze(text=text, language=LANGUAGE, score_threshold=GLINER_THRESHOLD)
         spans = []
         for result in results:
             start, end = _trim_span(text, result.start, result.end)

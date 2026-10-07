@@ -25,6 +25,15 @@ LLM: com `ANTHROPIC_API_KEY` definida, `/process` chama `claude-sonnet-5-5` pedi
 ANTHROPIC_API_KEY=sk-ant-... ./run.sh
 ```
 
+## Desempenho
+
+- O GLiNER responde por ~99% do tempo. Os pedaços do currículo (250 caracteres, 50 de sobreposição) vão numa única chamada em lote.
+- `GLINER_THREADS` (padrão 6) controla as threads do PyTorch. Neste notebook (i7-1365U, 2 núcleos rápidos + 8 econômicos), 6 threads foi mais rápido que 4, 8 e 10. Ajuste para a máquina de produção.
+- Cache em memória (LRU, 128 textos) por SHA-256 do texto: "Enviar para LLM" depois de "Mascarar" não roda a detecção de novo.
+- O modelo é aquecido no startup com o currículo de exemplo, então a primeira requisição não paga o aquecimento.
+- Cada resposta traz `timings` (regex, gliner, llm, total, cache_hit), que também aparecem no log e na tela.
+- Quantização int8 (PyTorch e ONNX) foi testada e **descartada**: o modelo deixou de detectar nomes, telefones e e-mails.
+
 ## Testes
 
 ```bash

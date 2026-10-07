@@ -1,7 +1,9 @@
+import os
 import re
-from typing import List, Optional
+from typing import Dict, List, Optional
 
-from presidio_analyzer import Pattern, PatternRecognizer, RecognizerResult
+import torch
+from presidio_analyzer import AnalysisExplanation, Pattern, PatternRecognizer, RecognizerResult
 from presidio_analyzer.nlp_engine import NlpArtifacts
 from presidio_analyzer.predefined_recognizers import GLiNERRecognizer
 
@@ -10,6 +12,8 @@ from app.document_validators import is_valid_cnpj, is_valid_cpf
 LANGUAGE = "pt"
 GLINER_MODEL_NAME = "urchade/gliner_multi_pii-v1"
 GLINER_THRESHOLD = 0.3
+GLINER_THREADS = int(os.environ.get("GLINER_THREADS", "6"))
+GLINER_MAX_BATCH_SIZE = 32
 
 GLINER_ENTITY_MAPPING = {
     "person": "PERSON",
@@ -168,13 +172,48 @@ class PortugueseGlinerRecognizer(GLiNERRecognizer):
         entities: List[str],
         nlp_artifacts: Optional[NlpArtifacts] = None,
     ) -> List[RecognizerResult]:
-        own_entities = [entity for entity in entities if entity in self.supported_entities]
-        results = super().analyze(text, own_entities, nlp_artifacts)
-        return [result for result in results if not _is_employment_period(text, result)]
+        chunks = self.text_chunker.chunk(text)
+        if not chunks:
+            return []
+        predictions = self.gliner.inference(
+            texts=[chunk.text for chunk in chunks],
+            labels=self.gliner_labels,
+            flat_ner=self.flat_ner,
+            threshold=self.threshold,
+            multi_label=self.multi_label,
+            batch_size=min(len(chunks), GLINER_MAX_BATCH_SIZE),
+        )
+        results = [
+            self._to_result(prediction, chunk.start)
+            for chunk, chunk_predictions in zip(chunks, predictions)
+            for prediction in chunk_predictions
+        ]
+        requested = [
+            result for result in results if result.entity_type in entities and not _is_employment_period(text, result)
+        ]
+        return self.text_chunker.deduplicate_overlapping_entities(requested)
+
+    def _to_result(self, prediction: Dict, offset: int) -> RecognizerResult:
+        entity_type = self.model_to_presidio_entity_mapping.get(prediction["label"], prediction["label"])
+        return RecognizerResult(
+            entity_type=entity_type,
+            start=prediction["start"] + offset,
+            end=prediction["end"] + offset,
+            score=prediction["score"],
+            analysis_explanation=AnalysisExplanation(
+                recognizer=self.name,
+                original_score=prediction["score"],
+                textual_explanation=f"Identified as {entity_type} by GLiNER",
+            ),
+        )
 
 
 def _is_employment_period(text: str, result: RecognizerResult) -> bool:
     return result.entity_type == "DATE_OF_BIRTH" and bool(EMPLOYMENT_PERIOD.match(text[result.start:result.end].strip()))
+
+
+def configure_torch_threads() -> None:
+    torch.set_num_threads(GLINER_THREADS)
 
 
 def build_pattern_recognizers() -> list:

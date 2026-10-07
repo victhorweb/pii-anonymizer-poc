@@ -10,9 +10,9 @@ from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
-from app.anonymizer import ResumeAnonymizer, build_analyzer_engine, rehydrate, rehydrate_structure
+from app.anonymizer import AnonymizationResult, ResumeAnonymizer, build_detection_engines, rehydrate, rehydrate_structure
 from app.llm import MODEL, LlmRefusalError, ResumeStructurer
-from app.recognizers import GLINER_MODEL_NAME
+from app.recognizers import GLINER_MODEL_NAME, GLINER_THREADS
 from app.text_extraction import UnsupportedFileError, extract_text
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
@@ -26,11 +26,19 @@ SAMPLE_RESUME = PROJECT_DIR / "samples" / "curriculo_exemplo.txt"
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     started_at = time.perf_counter()
-    logger.info("Carregando GLiNER (%s) em CPU... a primeira execução baixa ~1 GB.", GLINER_MODEL_NAME)
-    analyzer = await run_in_threadpool(build_analyzer_engine)
-    app.state.anonymizer = ResumeAnonymizer(analyzer)
+    logger.info("Carregando GLiNER (%s) em CPU com %d threads... a primeira execução baixa ~1 GB.", GLINER_MODEL_NAME, GLINER_THREADS)
+    engines = await run_in_threadpool(build_detection_engines)
+    app.state.anonymizer = ResumeAnonymizer(engines)
     app.state.structurer = ResumeStructurer()
-    logger.info("GLiNER pronto em %.1fs. Modo LLM: %s", time.perf_counter() - started_at, _llm_mode(app))
+    loaded_at = time.perf_counter()
+    await run_in_threadpool(app.state.anonymizer.warm_up, SAMPLE_RESUME.read_text(encoding="utf-8"))
+    logger.info(
+        "GLiNER pronto em %.1fs (carga %.1fs + aquecimento %.1fs). Modo LLM: %s",
+        time.perf_counter() - started_at,
+        loaded_at - started_at,
+        time.perf_counter() - loaded_at,
+        _llm_mode(app),
+    )
     yield
 
 
@@ -49,6 +57,13 @@ class RehydratePayload(BaseModel):
 
 def _llm_mode(application: FastAPI) -> str:
     return "simulated" if application.state.structurer.is_simulated else "anthropic"
+
+
+def _anonymize_logged(application: FastAPI, text: str, endpoint: str) -> AnonymizationResult:
+    result = application.state.anonymizer.anonymize(text)
+    stages = " ".join(f"{stage}={seconds * 1000:.0f}ms" for stage, seconds in result.timings.items() if stage != "cache_hit")
+    logger.info("%s: %d chars, cache=%s %s", endpoint, len(text), "hit" if result.timings["cache_hit"] else "miss", stages)
+    return result
 
 
 @app.get("/", include_in_schema=False)
@@ -78,12 +93,13 @@ async def extract_uploaded_text(file: UploadFile = File(...)) -> dict:
 
 @app.post("/anonymize")
 def anonymize(payload: TextPayload, request: Request) -> dict:
-    result = request.app.state.anonymizer.anonymize(payload.text)
+    result = _anonymize_logged(request.app, payload.text, "/anonymize")
     return {
         "masked_text": result.masked_text,
         "mapping": result.mapping,
         "variants": result.variants,
         "entities": result.entities,
+        "timings": result.timings,
     }
 
 
@@ -94,11 +110,12 @@ def rehydrate_text(payload: RehydratePayload) -> dict:
 
 @app.post("/process")
 def process(payload: TextPayload, request: Request) -> dict:
-    result = request.app.state.anonymizer.anonymize(payload.text)
+    result = _anonymize_logged(request.app, payload.text, "/process")
     name_placeholder = next(
         (entity["placeholder"] for entity in result.entities if entity["entity_type"] == "PERSON"),
         None,
     )
+    llm_started_at = time.perf_counter()
     try:
         outcome = request.app.state.structurer.structure(result.masked_text, name_placeholder)
     except LlmRefusalError as error:
@@ -107,6 +124,8 @@ def process(payload: TextPayload, request: Request) -> dict:
         raise HTTPException(status_code=502, detail=f"Erro da API Anthropic ({error.status_code}): {error.message}") from error
     except anthropic.APIConnectionError as error:
         raise HTTPException(status_code=502, detail=f"Falha de conexão com a API Anthropic: {error}") from error
+    llm_seconds = time.perf_counter() - llm_started_at
+    logger.info("/process: llm=%.0fms (%s)", llm_seconds * 1000, outcome.model)
     return {
         "simulated": outcome.simulated,
         "model": outcome.model,
@@ -115,4 +134,5 @@ def process(payload: TextPayload, request: Request) -> dict:
         "rehydrated": rehydrate_structure(outcome.structured, result.mapping),
         "mapping": result.mapping,
         "entities": result.entities,
+        "timings": {**result.timings, "llm": llm_seconds},
     }

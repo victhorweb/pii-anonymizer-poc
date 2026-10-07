@@ -133,6 +133,8 @@
   .resume-summary dt { color: var(--muted); }
   .resume-summary dd { margin: 0; }
   details summary { cursor: pointer; color: var(--muted); font-size: 13px; margin-top: 8px; }
+  .timings { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 16px; }
+  .timings .pill strong { color: var(--text); }
 </style>
 </head>
 <body>
@@ -166,6 +168,8 @@
     </div>
     <div class="error" id="error-box"></div>
   </section>
+
+  <div class="timings hidden" id="timings"></div>
 
   <section id="mask-section" class="hidden">
     <div class="vault">
@@ -247,6 +251,7 @@ const PLACEHOLDER_TYPES = {
   DATA_NASCIMENTO: "DATE_OF_BIRTH",
   LINK: "SOCIAL_PROFILE_URL",
 };
+const TIMING_LABELS = { regex: "Regex", gliner: "GLiNER", llm: "LLM", total: "Mascaramento total" };
 const PLACEHOLDER_REGEX = /&lt;([A-Z_]+?)_(\d+)&gt;/g;
 
 const elements = Object.fromEntries(
@@ -254,7 +259,7 @@ const elements = Object.fromEntries(
     "resume-input", "load-sample", "file-input", "file-name", "mask-button", "llm-button", "error-box",
     "mask-section", "vault-list", "vault-count", "legend", "original-view", "masked-view", "entity-rows",
     "llm-section", "llm-model", "sent-view", "response-view", "summary-view", "rehydrated-view",
-    "ner-status", "llm-status",
+    "ner-status", "llm-status", "timings",
   ].map((id) => [id, document.getElementById(id)])
 );
 
@@ -292,6 +297,22 @@ function highlightOriginal(text, entities) {
     cursor = entity.end;
   }
   return html + escapeHtml(text.slice(cursor));
+}
+
+function formatSeconds(seconds) {
+  return seconds < 1 ? `${Math.round(seconds * 1000)} ms` : `${seconds.toFixed(2)} s`;
+}
+
+function renderTimings(timings, clientSeconds) {
+  const stages = Object.entries(TIMING_LABELS)
+    .filter(([stage]) => typeof timings[stage] === "number")
+    .map(([stage, label]) => `<span class="pill">${label}: <strong>${formatSeconds(timings[stage])}</strong></span>`);
+  const cache = timings.cache_hit
+    ? '<span class="pill ok">cache: reaproveitado</span>'
+    : '<span class="pill">cache: novo texto</span>';
+  const roundTrip = `<span class="pill">Ida e volta no navegador: <strong>${formatSeconds(clientSeconds)}</strong></span>`;
+  elements.timings.innerHTML = [cache, ...stages, roundTrip].join("");
+  elements.timings.classList.remove("hidden");
 }
 
 function setBusy(isBusy) {
@@ -430,14 +451,19 @@ async function runAction(action) {
 elements["mask-button"].addEventListener("click", () =>
   runAction(async () => {
     const text = currentText();
-    renderMasking(text, await postJson("/anonymize", { text }));
+    const startedAt = performance.now();
+    const result = await postJson("/anonymize", { text });
+    renderMasking(text, result);
+    renderTimings(result.timings, (performance.now() - startedAt) / 1000);
   })
 );
 
 elements["llm-button"].addEventListener("click", () =>
   runAction(async () => {
     const text = currentText();
+    const startedAt = performance.now();
     const result = await postJson("/process", { text });
+    renderTimings(result.timings, (performance.now() - startedAt) / 1000);
     renderMasking(text, { masked_text: result.sent_to_llm, mapping: result.mapping, entities: result.entities });
     renderLlmRoundTrip(result);
   })
