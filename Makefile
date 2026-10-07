@@ -1,7 +1,7 @@
 PORT ?= 8765
 HOST ?= 127.0.0.1
 
-.PHONY: install run test
+.PHONY: install run test export-onnx
 
 install:
 	python3 -m venv .venv
@@ -13,3 +13,6 @@ run:
 
 test:
 	.venv/bin/python -m pytest -q
+
+export-onnx:
+	.venv/bin/python -m scripts.export_onnx

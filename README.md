@@ -28,8 +28,15 @@ ANTHROPIC_API_KEY=sk-ant-... ./run.sh
 
 ## Desempenho
 
-- O GLiNER responde por ~99% do tempo. Os pedaços do currículo (250 caracteres, 50 de sobreposição) vão numa única chamada em lote.
-- `GLINER_THREADS` (padrão 6) controla as threads do PyTorch. Neste notebook (i7-1365U, 2 núcleos rápidos + 8 econômicos), 6 threads foi mais rápido que 4, 8 e 10. Ajuste para a máquina de produção.
+- O GLiNER responde por ~99% do tempo, e o custo cresce com o **tamanho do texto** (~1,5–2 s por mil caracteres no PyTorch, neste notebook). Quantos dados pessoais o texto tem e quantos rótulos o GLiNER procura mexem pouco.
+- **Runtime ONNX fp32**: com o export em `models/gliner_multi_pii-v1-onnx/model.onnx`, o GLiNER roda no ONNX Runtime; sem ele, cai para o PyTorch. O log de startup e o `/health` (`ner_runtime`) dizem qual está ativo. Para gerar o export (~1,2 GB, fora do git):
+
+  ```bash
+  make export-onnx
+  ```
+
+- Pedaços de 600 caracteres com 60 de sobreposição, todos numa única chamada em lote. Com ONNX, isso deixou o currículo de exemplo ~1,7x mais rápido que PyTorch com pedaços de 250/50, com exatamente os mesmos spans detectados.
+- `GLINER_THREADS` (padrão 10) controla as threads do ONNX Runtime ou do PyTorch. Neste notebook (i7-1365U, 2 núcleos rápidos + 8 econômicos), 10 foi o melhor; 12 piora bastante. Ajuste para a máquina de produção.
 - Cache em memória (LRU, 128 textos) por SHA-256 do texto: "Enviar para LLM" depois de "Mascarar" não roda a detecção de novo.
 - O modelo é aquecido no startup com o currículo de exemplo, então a primeira requisição não paga o aquecimento.
 - Cada resposta traz `timings` (regex, gliner, llm, total, cache_hit), que também aparecem no log e na tela.

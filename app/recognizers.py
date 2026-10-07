@@ -1,9 +1,12 @@
 import os
 import re
+from pathlib import Path
 from typing import Dict, List, Optional
 
+import onnxruntime
 import torch
 from presidio_analyzer import AnalysisExplanation, Pattern, PatternRecognizer, RecognizerResult
+from presidio_analyzer.chunkers import CharacterBasedTextChunker
 from presidio_analyzer.nlp_engine import NlpArtifacts
 from presidio_analyzer.predefined_recognizers import GLiNERRecognizer
 
@@ -12,8 +15,12 @@ from app.document_validators import is_valid_cnpj, is_valid_cpf
 LANGUAGE = "pt"
 GLINER_MODEL_NAME = "urchade/gliner_multi_pii-v1"
 GLINER_THRESHOLD = 0.3
-GLINER_THREADS = int(os.environ.get("GLINER_THREADS", "6"))
+GLINER_THREADS = int(os.environ.get("GLINER_THREADS", "10"))
 GLINER_MAX_BATCH_SIZE = 32
+GLINER_CHUNK_SIZE = 600
+GLINER_CHUNK_OVERLAP = 60
+GLINER_ONNX_DIR = Path(__file__).resolve().parent.parent / "models" / "gliner_multi_pii-v1-onnx"
+GLINER_ONNX_FILE = "model.onnx"
 
 GLINER_ENTITY_MAPPING = {
     "person": "PERSON",
@@ -165,9 +172,10 @@ class PortugueseGlinerRecognizer(GLiNERRecognizer):
         super().__init__(
             supported_language=LANGUAGE,
             entity_mapping=GLINER_ENTITY_MAPPING,
-            model_name=GLINER_MODEL_NAME,
             threshold=GLINER_THRESHOLD,
             map_location="cpu",
+            text_chunker=CharacterBasedTextChunker(chunk_size=GLINER_CHUNK_SIZE, chunk_overlap=GLINER_CHUNK_OVERLAP),
+            **_gliner_model_options(),
         )
 
     def analyze(
@@ -220,6 +228,30 @@ def address_without_city_and_state(surface: str) -> str:
     suffix = CITY_AND_STATE_SUFFIX.search(surface)
     street = surface[:suffix.start()] if suffix else surface
     return street if STREET_ADDRESS_HINT.search(street) else ""
+
+
+def gliner_runtime() -> str:
+    return "onnx" if (GLINER_ONNX_DIR / GLINER_ONNX_FILE).is_file() else "torch"
+
+
+def _gliner_model_options() -> dict:
+    if gliner_runtime() == "torch":
+        return {"model_name": GLINER_MODEL_NAME}
+    return {
+        "model_name": str(GLINER_ONNX_DIR),
+        "load_onnx_model": True,
+        "onnx_model_file": GLINER_ONNX_FILE,
+        "load_tokenizer": True,
+        "local_files_only": True,
+        "runtime_options": {"session_options": _onnx_session_options()},
+    }
+
+
+def _onnx_session_options() -> onnxruntime.SessionOptions:
+    options = onnxruntime.SessionOptions()
+    options.graph_optimization_level = onnxruntime.GraphOptimizationLevel.ORT_ENABLE_ALL
+    options.intra_op_num_threads = GLINER_THREADS
+    return options
 
 
 def configure_torch_threads() -> None:

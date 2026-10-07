@@ -12,7 +12,7 @@ from pydantic import BaseModel, Field
 
 from app.anonymizer import AnonymizationResult, ResumeAnonymizer, build_detection_engines, rehydrate, rehydrate_structure
 from app.llm import MODEL, LlmRefusalError, ResumeStructurer
-from app.recognizers import GLINER_MODEL_NAME, GLINER_THREADS
+from app.recognizers import GLINER_MODEL_NAME, GLINER_THREADS, gliner_runtime
 from app.text_extraction import UnsupportedFileError, extract_text
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
@@ -26,7 +26,12 @@ SAMPLE_RESUME = PROJECT_DIR / "samples" / "curriculo_exemplo.txt"
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     started_at = time.perf_counter()
-    logger.info("Carregando GLiNER (%s) em CPU com %d threads... a primeira execução baixa ~1 GB.", GLINER_MODEL_NAME, GLINER_THREADS)
+    logger.info(
+        "Carregando GLiNER (%s, runtime %s) em CPU com %d threads... a primeira execução baixa ~1 GB.",
+        GLINER_MODEL_NAME,
+        gliner_runtime(),
+        GLINER_THREADS,
+    )
     engines = await run_in_threadpool(build_detection_engines)
     app.state.anonymizer = ResumeAnonymizer(engines)
     app.state.structurer = ResumeStructurer()
@@ -73,7 +78,13 @@ def index() -> FileResponse:
 
 @app.get("/health")
 def health(request: Request) -> dict:
-    return {"status": "ok", "llm_mode": _llm_mode(request.app), "llm_model": MODEL, "ner_model": GLINER_MODEL_NAME}
+    return {
+        "status": "ok",
+        "llm_mode": _llm_mode(request.app),
+        "llm_model": MODEL,
+        "ner_model": GLINER_MODEL_NAME,
+        "ner_runtime": gliner_runtime(),
+    }
 
 
 @app.get("/sample")
